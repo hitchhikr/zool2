@@ -14,5 +14,6 @@ I made a few changes to the original game:
     - Fixed a bug when the character is gripping a wall (it should be easier now).
 
 Note that if the screen turns red at start, you need to copy the lowlevel.library file into the libs: directory.
+Note also that i removed the original cd32 animations and cd tracks (replaced by the .mods).
 
 A work in progress...
