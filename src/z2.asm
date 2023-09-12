@@ -51,8 +51,10 @@ _LVOSystemControl   equ     -72
 _LVOAddVBlankInt    equ     -108
 _LVOSetJoyPortAttrsA equ    -132
 
-SJA_Type            equ     ($c00100+1)
- 
+SJA_Type            equ     ($80c00100+1)
+SCON_KillReq        equ     ($80c00000+1)
+SCON_StopInput      equ     ($80c00000+3)
+
 SJA_TYPE_GAMECTLR   equ     1
 
 ZOOL_GRIPPING       equ     3
@@ -14380,7 +14382,7 @@ CIAB_GAMEPORT1      equ      7       ; gameport 1, pin 6 (fire button*)
 READ_JOYSTICK:      movem.l d1-a6,-(a7)
                     cmp.b   #1,JOYSTICK_MODE(pc)
                     bne.s   NO_CD32_PAD
-                    move.l   GAMEBASE,a6
+                    move.l  GAMEBASE,a6
                     jsr     _LVOReadJoyPort(a6)
                     movem.l (a7)+,d1-a6
                     rts
@@ -24853,8 +24855,8 @@ GFXBASE:            dc.l     0
 GAMEBASE:           dc.l     0
 TAGLIST_CTRL:       dc.l     SJA_Type,SJA_TYPE_GAMECTLR
                     dc.l     0
-TAGLIST_OFF:        dc.l     $80C00001,1
-                    dc.l     $80C00003,1
+TAGLIST_OFF:        dc.l     SCON_KillReq,1
+                    dc.l     SCON_StopInput,1
                     dc.l     0
 DOSNAME:            dc.b     'dos.library',0
                     even
