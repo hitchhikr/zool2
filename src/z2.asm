@@ -67,7 +67,18 @@ AUDIO_NONE          equ     0
 AUDIO_MUSIC         equ     1
 AUDIO_MUSIC_FX      equ     2
 
-                    SECTION  PROG,CODE
+WAIT_BLITTER        MACRO
+.WAIT\@:
+                    btst     #6,$2(a5)
+                    bne.s    .WAIT\@
+                    ENDM
+WAIT_BLITTER_2      MACRO
+.WAIT\@:
+                    btst     #6,$DFF002
+                    bne.s    .WAIT\@
+                    ENDM
+
+                    section  prog,code
 
 PROGRAM:            sub.l    a1,a1
                     move.l   4.w,a6
@@ -160,7 +171,6 @@ READFILE:           move.l   FILEHANDLE(pc),d1
 DOS_SAVEFILE:       move.l   a5,FILE_DESTBUFFER
                     move.l   d0,FILE_LENGTH
                     move.l   a0,FILENAME
-                    
                     bsr      FREEBLITTER
                     move.l   FILENAME(pc),d1
                     move.l   #$3EE,d2
@@ -187,11 +197,11 @@ WRITEFILE:          move.l   FILEHANDLE(pc),d1
 ; Retrieve the vector base register
 GET_VBR:            move.l  4.w,a6
                     move.b  $128+1(a6),d0
-                    btst.l  #1,d0
-                    beq.s   NO_68020
+                    btst.l  #0,d0
+                    beq.s   NO_68010
                     lea     SUPERVISOR_VBR(pc),a5
                     jmp     _LVOSupervisor(a6)
-NO_68020:           rts
+NO_68010:           rts
 SUPERVISOR_VBR:     movec   vbr,d0
                     lea.l   CUR_VBR(pc),a0
                     move.l  d0,(a0)
@@ -210,7 +220,9 @@ CUR_VBR:            dc.l     0
 ; main program
 MAIN_BEGIN:         bsr.s    GET_VBR
                     move.w   #0,$DFF180
-START:              move.w   #$A0,$DFF096
+START:              move.w   #$1A0,$DFF096
+                    ; turn blitter nasty on
+                    move.w   #$8400,$DFF096
                     move.l   #LAST_ICON,$DFF120
                     move.l   #LAST_ICON,$DFF124
                     move.l   #LAST_ICON,$DFF128
@@ -219,9 +231,9 @@ START:              move.w   #$A0,$DFF096
                     move.l   #LAST_ICON,$DFF134
                     move.l   #LAST_ICON,$DFF138
                     move.l   #LAST_ICON,$DFF13C
-                    sf       DISK_IN
+                    ;sf       DISK_IN
                     jsr      REAL_RAND
-                    lea      HISCR_TAB,a5
+                    ;lea      HISCR_TAB,a5
                     
                     lea.l    HISCR_TAB,a0
                     lea      HISCORE_NAME,a1
@@ -267,7 +279,6 @@ lbC001368:          move.w   #15,$DFF096
                     jsr      INIT_SCRNS
                     move.l   PHYSADR,a0
                     jsr      CLR_SCRN
-
                     jsr      INIT_LEVEL
                     jsr      INIT_LDATA
                     jsr      INIT_SCRO
@@ -299,7 +310,7 @@ _SETUPSCRO:
 
 lbC001420:          move.w   #15,$DFF096
                     ;move.w   #1,MUSICON
-lbC001430:          
+lbC001430:
                     jsr      INIT_DUAL
                     move.l   #COPPER_GAME,COP_LOC
                     move.l   #$FFFFFFFE,WRITE_COP
@@ -327,6 +338,9 @@ lbC001430:
 
 STACKVAL:           dc.l     0
 
+; ---------------------------------
+; MAIN GAME LOOP
+; ---------------------------------
 MLOOP:              ;btst     #3,VBL_CNT
                     ;beq      _MAIN_RTN
                     ;jsr      CHECKAUDIOFINISHED
@@ -345,6 +359,7 @@ MAIN_RTN:           bsr.s    PRO_MAIN
 
 PRO_MAIN:           jsr      RANDOM
                     jsr      READ_JOY
+                    ; activate some test mode 
                     sf       TEST_MODE
                     cmp.b    #$D7,KEYREC
                     bne.s    _PRO_ZOOL
@@ -367,6 +382,7 @@ _PRO_ZOOL:          bsr      PRO_ZOOL
                     bsr      PRO_BACKFX
                     bsr      PRO_SECTL
                     bsr      PRO_TOKENS
+
 _DEF_SCROLL:        bsr      DEF_SCROLL
                     bsr      MAP_LIMITS
                     bsr      CALC_PRLX
@@ -473,7 +489,7 @@ VBL:                move.w   SWITCH_CNT,d0
 lbC001888:          cmp.w    SWITCH_CNT,d0
                     beq.s    lbC001888
                     move.w   #201-1,d7
-lbC001894:          dbra     d7,lbC001894
+.WAIT:              dbra     d7,.WAIT
                     rts
 
 SYNCRO:             cmp.w    #2,SWITCH_CNT
@@ -2050,20 +2066,8 @@ lbC002F32:          move.b   d5,(a1)+
                     move.w   d6,d0
                     lsl.w    #3,d0
                     lea      8(a3,d0.w),a3
-                    tst.b    $DFF002
-                    btst     #6,$DFF002
-                    bne.s    lbC002F92
-                    bra.s    lbC002FB4
-
-lbC002F92:          nop
-                    nop
-                    nop
-                    tst.b    $BFE001
-                    tst.b    $BFE001
-                    btst     #6,$DFF002
-                    bne.s    lbC002F92
-                    tst.b    $DFF002
-lbC002FB4:          lea      $DFF000,a5
+                    lea      $DFF000,a5
+                    WAIT_BLITTER
                     clr.l    $64(a5)
                     move.l   #$FFFF0000,$44(a5)
                     move.l   #$9F000010,$40(a5)
@@ -2074,60 +2078,24 @@ lbC002FB4:          lea      $DFF000,a5
                     move.w   #$1001,$58(a5)
                     lea      $80(a2),a2
                     lea      $100(a3),a3
-                    tst.b    $2(a5)
-                    btst     #6,$2(a5)
-                    bne.s    lbC003010
-                    bra.s    lbC003032
-
-lbC003010:          nop
-                    nop
-                    nop
-                    tst.b    $BFE001
-                    tst.b    $BFE001
-                    btst     #6,$2(a5)
-                    bne.s    lbC003010
-                    tst.b    $2(a5)
-lbC003032:          move.l   a3,$50(a5)
+                    WAIT_BLITTER
+                    move.l   a3,$50(a5)
                     move.l   a2,$54(a5)
                     move.w   #$1001,$58(a5)
                     lea      $80(a2),a2
                     lea      $100(a3),a3
-                    tst.b    $2(a5)
-                    btst     #6,$2(a5)
-                    bne.s    lbC00305C
-                    bra.s    lbC00307E
-
-lbC00305C:          nop
-                    nop
-                    nop
-                    tst.b    $BFE001
-                    tst.b    $BFE001
-                    btst     #6,$2(a5)
-                    bne.s    lbC00305C
-                    tst.b    $2(a5)
-lbC00307E:          move.l   a3,$50(a5)
+                    WAIT_BLITTER
+                    move.l   a3,$50(a5)
                     move.l   a2,$54(a5)
                     move.w   #$1001,$58(a5)
                     lea      $80(a2),a2
                     lea      $100(a3),a3
-                    tst.b    $2(a5)
-                    btst     #6,$2(a5)
-                    bne.s    lbC0030A8
-                    bra.s    lbC0030CA
-
-lbC0030A8:          nop
-                    nop
-                    nop
-                    tst.b    $BFE001
-                    tst.b    $BFE001
-                    btst     #6,$2(a5)
-                    bne.s    lbC0030A8
-                    tst.b    $2(a5)
-lbC0030CA:          move.l   a3,$50(a5)
+                    WAIT_BLITTER
+                    move.l   a3,$50(a5)
                     move.l   a2,$54(a5)
                     move.w   #$1001,$58(a5)
                     move.w   (sp)+,d7
-
+                    WAIT_BLITTER
 DRAW_MINIS:         rts
 
                     lea      MINI_TAB,a0
@@ -3048,20 +3016,8 @@ lbC003F2C:          bra      lbC003E4E
 
 DUMP_FTILE:         lea      $DFF000,a5
                     move.l   BUFF_PTR,a1
-                    tst.b    $2(a5)
-                    btst     #6,$2(a5)
-                    bne.s    lbC003F50
-                    bra.s    lbC003F72
-
-lbC003F50:          nop
-                    nop
-                    nop
-                    tst.b    $BFE001
-                    tst.b    $BFE001
-                    btst     #6,$2(a5)
-                    bne.s    lbC003F50
-                    tst.b    $2(a5)
-lbC003F72:          move.l   #$2E,$64(a5)
+                    WAIT_BLITTER
+                    move.l   #$2E,$64(a5)
                     move.l   #$FFFFFFFF,$44(a5)
                     move.l   #$9F00000,$40(a5)
                     lsl.w    #7,d7
@@ -3070,6 +3026,7 @@ lbC003F72:          move.l   #$2E,$64(a5)
                     move.l   a2,$50(a5)
                     move.l   a1,$54(a5)
                     move.w   #$1001,$58(a5)
+                    WAIT_BLITTER
                     rts
 
 ADD_PERM:           lea      PERM_TAB,a6
@@ -3371,6 +3328,7 @@ GET_HEIGHT:         lea      SPR_TAB,a0
                     move.w   (a0),ZOOL_HGT
                     rts
 
+; control zool
 PRO_ZOOL:           tst.b    SMART_BOMB
                     ble.s    lbC004408
                     subq.b   #1,SMART_BOMB
@@ -3691,7 +3649,7 @@ GAMEOVER:           move.b   #7,LEVEL_NUM
                     bra.s    _GET_DISK
 
 lbC004A22:          move.w   #15,$DFF096
-_GET_DISK:          jsr      GET_DISK
+_GET_DISK:          ;jsr      GET_DISK
                     clr.w    YSCROLL
                     clr.w    XSCROLL
                     
@@ -3752,9 +3710,9 @@ lbC004B80:          move.w   #200,d7
 
 LOAD_INTRO:         move.l   #INTRO_SPSTART,SPRITE_AD
                     move.l   #BOT_CHIP,MASK_AD
-                    add.l    #$117BA,MASK_AD
+                    add.l    #71610,MASK_AD
                     move.l   MASK_AD,a0
-                    add.l    #$1173A,a0
+                    add.l    #71482,a0
                     move.l   a0,MUSIC_PTR
                     move.l   a0,MUSIC_AD
                     move.l   #BLACK_BAND,COLBAND
@@ -4324,7 +4282,7 @@ INIT_JUMP:          move.l   a5,-(sp)
                     cmp.b    #$4F,d7
                     beq.s    lbC0056B8
 lbC00567E:          move.w   #2,ZOOL_MOVE
-                    sub.w    #$A0,Y_FORCE
+                    sub.w    #160,Y_FORCE
                     move.w   #1,X_FRICTION
                     clr.w    ZOOL_ANIM
                     st       INAIR
@@ -4435,12 +4393,12 @@ lbC00585A:          bclr     #7,OLDJOY
 lbC00586A:          move.w   #$17,ZOOL_SPR
                     move.w   Y_FORCE,d0
                     bmi.s    lbC005890
-                    cmp.w    #$40,d0
+                    cmp.w    #64,d0
                     bmi.s    lbC0058A0
                     move.w   #$18,ZOOL_SPR
                     bra.s    lbC0058A0
 
-lbC005890:          cmp.w    #$FFE0,d0
+lbC005890:          cmp.w    #-32,d0
                     bgt.s    lbC0058A0
                     move.w   #$16,ZOOL_SPR
 lbC0058A0:          btst     #0,JOYPOS
@@ -4453,7 +4411,7 @@ lbC0058B2:          btst     #2,JOYPOS
                     addq.b   #1,PAUSE_MOVE
                     bra.s    lbC0058E0
 
-lbC0058D2:          sub.w    #$18,X_FORCE
+lbC0058D2:          sub.w    #24,X_FORCE
                     sf       ZOOL_FACE
 lbC0058E0:          btst     #3,JOYPOS
                     beq.s    lbC00590E
@@ -4463,7 +4421,7 @@ lbC0058E0:          btst     #3,JOYPOS
                     bra.s    lbC00590E
 
 lbC005900:          st       ZOOL_FACE
-                    add.w    #$18,X_FORCE
+                    add.w    #24,X_FORCE
 lbC00590E:          cmp.w    #$2B,ZOOL_SPR
                     bpl.s    lbC00592C
                     tst.b    ZOOL_FACE
@@ -4494,11 +4452,11 @@ lbC005972:          addq.w   #1,DESTROYER
                     btst     #2,JOYPOS
                     beq.s    lbC0059B0
                     sf       ZOOL_FACE
-                    sub.w    #$18,X_FORCE
+                    sub.w    #24,X_FORCE
 lbC0059B0:          btst     #3,JOYPOS
                     beq.s    lbC0059CA
                     st       ZOOL_FACE
-                    add.w    #$18,X_FORCE
+                    add.w    #24,X_FORCE
 lbC0059CA:          subq.w   #1,ZOOL_ANIM
                     bpl.s    lbC0059F6
                     addq.w   #1,ZOOL_SPR
@@ -4515,11 +4473,11 @@ lbC0059F8:          sf       FORCE_LR
                     move.w   #$21,ZOOL_SPR
                     rts
 
-lbC005A1A:          sub.w    #$18,X_FORCE
+lbC005A1A:          sub.w    #24,X_FORCE
                     sf       ZOOL_FACE
                     bra.s    lbC0059CA
 
-lbC005A2A:          add.w    #$18,X_FORCE
+lbC005A2A:          add.w    #24,X_FORCE
                     st       ZOOL_FACE
                     bra.s    lbC0059CA
 
@@ -4890,10 +4848,10 @@ lbC005F62:          tst.b    DRAGGED
 lbC005F84:          btst     #3,JOYPOS
                     beq.s    lbC005F9E
                     addq.w   #4,d7
-                    cmp.w    #$90,d7
+                    cmp.w    #144,d7
                     bmi.s    lbC005F9E
-                    move.w   #$8C,d7
-lbC005F9E:          cmp.w    #$30,d7
+                    move.w   #140,d7
+lbC005F9E:          cmp.w    #48,d7
                     bpl.s    lbC005FA8
                     addq.w   #8,d7
 lbC005FA8:          move.w   d7,X_FORCE
@@ -5115,7 +5073,6 @@ lbC00634A:          lea      SKID_FX,a5
                     bpl.s    _ADD_SFX
                     lea      SKID3_FX,a5
 _ADD_SFX:           jsr      ADD_SFX
-                    ;bra      ZOOL_SKID
 
 ZOOL_SKID:          btst     #7,JOYPOS
                     beq.s    lbC006396
@@ -5321,7 +5278,7 @@ lbC00673C:          cmp.w    #-96,X_FORCE
 
 INIT_GRIP:          move.w   #ZOOL_GRIPPING,ZOOL_MOVE
                     clr.w    Y_FORCE
-                    ;clr.w    ZOOL_YDIS                 ; produced a bug if zool was too near from a wall
+                    ;clr.w    ZOOL_YDIS                 ; produced a bug if zool was too close to a wall
                     clr.b    INAIR
                     move.b   JOYPOS,OLDJOY
                     clr.w    ZOOL_ANIM
@@ -5984,7 +5941,6 @@ BAD_WALL_R:         move.w   #-96,X_FORCE
 BAD_WALL_L:         move.w   #96,X_FORCE
                     move.w   #6,ZOOL_XDIS
                     move.b   #236,PAUSE_MOVE
-                    ;bra      ZOOL_SHOCK
 
 ZOOL_SHOCK:         tst.w    SHIELD_ON
                     bne.s    lbC0072C0
@@ -7093,7 +7049,7 @@ PLAT_EXPL:          addq.l   #5,SCORE
                     move.w   FILLTILE_SPR,d4
                     bra      ADD_TILEFX
 
-ROOF_EXPL:          cmp.w    #$FF60,Y_FORCE
+ROOF_EXPL:          cmp.w    #-160,Y_FORCE
                     bgt      NORM_ROOF
 ROOF_BURST:         add.l    #$19,SCORE
                     cmp.b    #9,-(a0)
@@ -7366,7 +7322,7 @@ DEF_MOVE:           bsr.s    CONV_FORCE
                     tst.b    d1
                     bmi.s    lbC00886A
                     asr.w    #4,d0
-                    and.b    #15,d1
+                    and.b    #$F,d1
                     add.b    d1,YSPD_REM
                     cmp.b    #16,YSPD_REM
                     bmi.s    lbC008860
@@ -7399,7 +7355,7 @@ lbC00889A:          move.w   X_SPEED,d0
 lbC0088CA:          move.w   d0,ZOOL_XDIS
                     rts
 
-lbC0088D2:          add.w    #15,d0
+lbC0088D2:          add.w    #$F,d0
                     and.b    #$F,d1
                     or.b     #$F0,d1
                     asr.w    #4,d0
@@ -10852,38 +10808,15 @@ lbC00BD8E:          tst.w    YSCROLL
 
 lbC00BDA0:          rts
 
-DUMP_ROW:           move.w   #$14,d7
+DUMP_ROW:           move.w   #21-1,d7
                     lea      $DFF000,a5
-                    tst.b    $2(a5)
-                    btst     #6,$2(a5)
-                    bne.s    lbC00BDC0
-                    bra.s    lbC00BDE2
-
-lbC00BDC0:          nop
-                    nop
-                    nop
-                    tst.b    $BFE001
-                    tst.b    $BFE001
-                    btst     #6,$2(a5)
-                    bne.s    lbC00BDC0
-                    tst.b    $2(a5)
-lbC00BDE2:          move.l   #$2E,$64(a5)
+                    WAIT_BLITTER
+                    move.l   #$2E,$64(a5)
                     move.l   #$FFFFFFFF,$44(a5)
                     move.l   #$9F00000,$40(a5)
-lbC00BE06:          tst.b    $2(a5)
-                    btst     #6,$2(a5)
-                    bne.s    lbC00BE1A
-                    bra.s    lbC00BE3C
-
-lbC00BE1A:          nop
-                    nop
-                    nop
-                    tst.b    $BFE001
-                    tst.b    $BFE001
-                    btst     #6,$2(a5)
-                    bne.s    lbC00BE1A
-                    tst.b    $2(a5)
-lbC00BE3C:          moveq    #0,d0
+.LOOP:          
+                    WAIT_BLITTER
+                    moveq    #0,d0
                     move.w   (a0)+,d0
                     lsl.l    #7,d0
                     move.l   TILES,a2
@@ -10892,57 +10825,36 @@ lbC00BE3C:          moveq    #0,d0
                     move.l   a1,$54(a5)
                     move.w   #$1001,$58(a5)
                     addq.l   #2,a1
-                    dbra     d7,lbC00BE06
+                    dbra     d7,.LOOP
+                    WAIT_BLITTER
                     rts
 
-DUMP_COL:           move.w   #16,d7
+DUMP_COL:           move.w   #17-1,d7
                     moveq    #0,d2
                     move.w   MAP_WIDTH,d2
                     add.w    d2,d2
                     lea      $DFF000,a5
-                    tst.b    $2(a5)
-                    btst     #6,$2(a5)
-                    bne.s    lbC00BE88
-                    bra.s    lbC00BEAA
-
-lbC00BE88:          nop
-                    nop
-                    nop
-                    tst.b    $BFE001
-                    tst.b    $BFE001
-                    btst     #6,$2(a5)
-                    bne.s    lbC00BE88
-                    tst.b    $2(a5)
-lbC00BEAA:          move.l   #$2E,$64(a5)
+                    WAIT_BLITTER
+                    move.l   #$2E,$64(a5)
                     move.l   #$FFFFFFFF,$44(a5)
                     move.l   #$9F00000,$40(a5)
-lbC00BECE:          tst.b    $2(a5)
-                    btst     #6,$2(a5)
-                    bne.s    lbC00BEE2
-                    bra.s    lbC00BF04
-
-lbC00BEE2:          nop
-                    nop
-                    nop
-                    tst.b    $BFE001
-                    tst.b    $BFE001
-                    btst     #6,$2(a5)
-                    bne.s    lbC00BEE2
-                    tst.b    $2(a5)
-lbC00BF04:          moveq    #0,d0
+.LOOP:
+                    WAIT_BLITTER
+                    moveq    #0,d0
                     move.w   (a0),d0
                     lsl.l    #7,d0
                     move.l   TILES,a2
                     add.l    d0,a2
                     cmp.l    a3,a1
-                    bmi.s    lbC00BF1E
+                    bmi.s    .WRAP
                     sub.l    #52224,a1
-lbC00BF1E:          move.l   a2,$50(a5)
+.WRAP:              move.l   a2,$50(a5)
                     move.l   a1,$54(a5)
                     move.w   #$1001,$58(a5)
                     add.l    d2,a0
                     lea      3072(a1),a1
-                    dbra     d7,lbC00BECE
+                    dbra     d7,.LOOP
+                    WAIT_BLITTER
                     rts
 
 SCRO_UP:            move.w   YSCROLL,d0
@@ -11075,6 +10987,7 @@ lbC00C120:          subq.l   #2,SCROLL
                     subq.l   #2,a4
                     bra      DUMP_COL
 
+; foreground scroll
 SCRO_NOW:           lea      BPL0_H,a0
                     move.l   BUFF_PTR,d0
                     move.w   #4-1,d1
@@ -11169,6 +11082,7 @@ lbC00C29A:          st       RESET_POS
 lbC00C2A2:          move.b   #2,RESET_POS
                     rts
 
+; bacground scroll
 SCRO2_NOW:          move.w   PARA_XSCRO,d0
                     beq.s    lbC00C32C
                     bpl.s    lbC00C2EC
@@ -11229,7 +11143,7 @@ lbC00C356:          lea      BPL4_H,a0
                     move.w   PARA_XREM,d0
                     and.w    #$f,d0
                     neg.w    d0
-                    add.w    #15,d0
+                    add.w    #$f,d0
                     lsl.w    #4,d0
                     or.w     HORZ_OFF,d0
                     move.w   d0,HORZ_SCRO
@@ -11711,20 +11625,8 @@ CONTXDR:            addq.w   #2,d0
                     lsl.w    #8,d2
                     add.w    d3,d2
                     move.w   d2,d7
-                    tst.b    $DFF002
-                    btst     #6,$DFF002
-                    bne.s    lbC00CAAE
-                    bra.s    lbC00CAD0
-
-lbC00CAAE:          nop
-                    nop
-                    nop
-                    tst.b    $BFE001
-                    tst.b    $BFE001
-                    btst     #6,$DFF002
-                    bne.s    lbC00CAAE
-                    tst.b    $DFF002
-lbC00CAD0:          lea      $DFF000,a5
+                    lea      $DFF000,a5
+                    WAIT_BLITTER
                     bsr      NEXTBLIT
 NODRAW:             move.w   (sp)+,YCOORD
                     rts
@@ -11757,20 +11659,8 @@ SINGMASK:           bsr      SBLIT_SPR
                     add.w    d3,d2
                     move.w   d2,d1
                     lea      $DFF000,a5
-                    tst.b    $DFF002
-                    btst     #6,$DFF002
-                    bne.s    lbC00CB4C
-                    bra.s    _SNEXTBLIT
-
-lbC00CB4C:          nop
-                    nop
-                    nop
-                    tst.b    $BFE001
-                    tst.b    $BFE001
-                    btst     #6,$DFF002
-                    bne.s    lbC00CB4C
-                    tst.b    $DFF002
-_SNEXTBLIT:         bsr      SNEXTBLIT
+                    WAIT_BLITTER
+                    bsr      SNEXTBLIT
 lbC00CB72:          move.w   (sp)+,YCOORD
                     rts
 
@@ -12027,20 +11917,9 @@ lbC00CEAA:          clr.b    DBL_BLIT
 lbC00CEB2:          lsr.w    #2,d0
                     bra.s    lbC00CE76
 
-BLIT_SPR:           tst.b    $DFF002
-                    btst     #6,$DFF002
-                    bne.s    lbC00CECA
-                    bra.s    lbC00CEEC
-
-lbC00CECA:          nop
-                    nop
-                    nop
-                    tst.b    $BFE001
-                    tst.b    $BFE001
-                    btst     #6,$DFF002
-                    bne.s    lbC00CECA
-                    tst.b    $DFF002
-lbC00CEEC:          lea      $DFF000,a5
+BLIT_SPR:
+                    lea      $DFF000,a5
+                    WAIT_BLITTER
                     move.l   #$FFFEFFFE,$62(a5)
 BLIT2_SPR:          move.l   #$FFFF0000,$44(a5)
                     move.w   d5,$60(a5)
@@ -12055,6 +11934,7 @@ NEXTBLIT:           move.l   a1,$50(a5)
                     move.w   d7,d0
                     lsr.w    #6,d0
                     move.w   d7,$58(a5)
+                    WAIT_BLITTER
                     tst.b    P_DRAW
                     bne.s    lbC00CF60
                     move.l   UNDRAW_PTR,a1
@@ -12065,7 +11945,8 @@ NEXTBLIT:           move.l   a1,$50(a5)
                     tst.b    ANDYFRAME
                     beq.s    lbC00CF62
                     addq.w   #1,SPRITES_CNTB
-lbC00CF60:          rts
+lbC00CF60:
+                    rts
 
 lbC00CF62:          addq.w   #1,SPRITES_CNTA
                     rts
@@ -12098,20 +11979,9 @@ lbC00CFD0:          rts
 lbC00CFD2:          clr.w    SPRITES_CNTB
                     rts
 
-UNBLIT_SPR:         tst.b    $DFF002
-                    btst     #6,$DFF002
-                    bne.s    lbC00CFEE
-                    bra.s    lbC00D010
-
-lbC00CFEE:          nop
-                    nop
-                    nop
-                    tst.b    $BFE001
-                    tst.b    $BFE001
-                    btst     #6,$DFF002
-                    bne.s    lbC00CFEE
-                    tst.b    $DFF002
-lbC00D010:          lea      $DFF000,a5
+UNBLIT_SPR:
+                    lea      $DFF000,a5
+                    WAIT_BLITTER
                     move.l   #$FFFFFFFF,$44(a5)
                     move.w   d5,$64(a5)
                     move.w   d5,$66(a5)
@@ -12119,22 +11989,12 @@ lbC00D010:          lea      $DFF000,a5
                     move.l   a0,$50(a5)
                     move.l   a1,$54(a5)
                     move.w   d7,$58(a5)
+                    WAIT_BLITTER
                     rts
 
-SBLIT_SPR:          tst.b    $DFF002
-                    btst     #6,$DFF002
-                    bne.s    lbC00D058
-                    bra.s    lbC00D07A
-
-lbC00D058:          nop
-                    nop
-                    nop
-                    tst.b    $BFE001
-                    tst.b    $BFE001
-                    btst     #6,$DFF002
-                    bne.s    lbC00D058
-                    tst.b    $DFF002
-lbC00D07A:          lea      $DFF000,a5
+SBLIT_SPR:
+                    lea      $DFF000,a5
+                    WAIT_BLITTER
                     move.l   #$FFFF0000,$44(a5)
                     move.w   SPR_MOD,d0
                     lsl.w    #2,d0
@@ -12165,66 +12025,31 @@ SNEXTBLIT:          move.w   SPR_MOD,d0
                     move.w   d1,$58(a5)
                     lea      0(a2,d0.w),a2
                     lea      48(a0),a0
-                    tst.b    $2(a5)
-                    btst     #6,$2(a5)
-                    bne.s    lbC00D10C
-                    bra.s    lbC00D12E
-
-lbC00D10C:          nop
-                    nop
-                    nop
-                    tst.b    $BFE001
-                    tst.b    $BFE001
-                    btst     #6,$2(a5)
-                    bne.s    lbC00D10C
-                    tst.b    $2(a5)
-lbC00D12E:          move.l   a1,$50(a5)
+                    WAIT_BLITTER
+                    move.l   a1,$50(a5)
                     move.l   a2,$4C(a5)
                     move.l   a0,$48(a5)
                     move.l   a0,$54(a5)
                     move.w   d1,$58(a5)
                     lea      0(a2,d0.w),a2
                     lea      48(a0),a0
-                    tst.b    $2(a5)
-                    btst     #6,$2(a5)
-                    bne.s    lbC00D15E
-                    bra.s    lbC00D180
-
-lbC00D15E:          nop
-                    nop
-                    nop
-                    tst.b    $BFE001
-                    tst.b    $BFE001
-                    btst     #6,$2(a5)
-                    bne.s    lbC00D15E
-                    tst.b    $2(a5)
-lbC00D180:          move.l   a1,$50(a5)
+                    WAIT_BLITTER
+                    move.l   a1,$50(a5)
                     move.l   a2,$4C(a5)
                     move.l   a0,$48(a5)
                     move.l   a0,$54(a5)
                     move.w   d1,$58(a5)
                     lea      0(a2,d0.w),a2
                     lea      48(a0),a0
-                    tst.b    $2(a5)
-                    btst     #6,$2(a5)
-                    bne.s    lbC00D1B0
-                    bra.s    lbC00D1D2
-
-lbC00D1B0:          nop
-                    nop
-                    nop
-                    tst.b    $BFE001
-                    tst.b    $BFE001
-                    btst     #6,$2(a5)
-                    bne.s    lbC00D1B0
-                    tst.b    $2(a5)
-lbC00D1D2:          move.l   a1,$50(a5)
+                    WAIT_BLITTER
+                    move.l   a1,$50(a5)
                     move.l   a2,$4C(a5)
                     move.l   a0,$48(a5)
                     move.l   a0,$54(a5)
                     move.w   d1,$58(a5)
                     lea      0(a2,d0.w),a2
                     lea      -144(a0),a0
+                    WAIT_BLITTER
                     lsl.w    #2,d0
                     neg.w    d0
                     lea      0(a2,d0.w),a2
@@ -14079,15 +13904,15 @@ LOWER_COLOR:        movem.w   d1/d2,-(a7)
                     and.w     #$f00,d0
                     and.w     #$f0,d1
                     and.w     #$f,d2
-                    sub.w     #$300,d0
+                    sub.w     #$600,d0
                     bge.s     LOWER_R
                     clr.w     d0
 LOWER_R:
-                    sub.w     #$30,d1
+                    sub.w     #$60,d1
                     bge.s     LOWER_G
                     clr.w     d1
 LOWER_G:
-                    subq.w    #3,d2
+                    subq.w    #6,d2
                     bge.s     LOWER_B
                     clr.w     d2
 LOWER_B:
@@ -14267,42 +14092,20 @@ INIT_SCRNS:         move.l   #BUFF1_START,PHYSADR
                     move.l   #BUFF2_START,LOGADR
                     rts
 
-CLR_SCRN:           tst.b    $DFF002
-                    btst     #6,$DFF002
-                    bne.s    lbC010156
-                    bra.s    lbC010178
-
-lbC010156:          nop
-                    nop
-                    nop
-                    tst.b    $BFE001
-                    tst.b    $BFE001
-                    btst     #6,$DFF002
-                    bne.s    lbC010156
-                    tst.b    $DFF002
-lbC010178:          lea      $DFF000,a5
+CLR_SCRN:
+                    lea      $DFF000,a5
+                    WAIT_BLITTER
                     move.l   #$9000000,$40(a5)
                     move.l   #$FFFE0000,$64(a5)
                     move.l   a0,$54(a5)
                     move.l   #CLEAR,$50(a5)
                     move.w   #$8818,$58(a5)
+                    WAIT_BLITTER
                     move.l   #CLEAR,$50(a5)
                     lea      26112(a0),a0
-                    tst.b    $2(a5)
-                    btst     #6,$2(a5)
-                    bne.s    lbC0101C6
-                    bra.s    lbC0101E8
-
-lbC0101C6:          nop
-                    nop
-                    nop
-                    tst.b    $BFE001
-                    tst.b    $BFE001
-                    btst     #6,$2(a5)
-                    bne.s    lbC0101C6
-                    tst.b    $2(a5)
-lbC0101E8:          move.l   a0,$54(a5)
+                    move.l   a0,$54(a5)
                     move.w   #$8818,$58(a5)
+                    WAIT_BLITTER
                     rts
 
 COP_LOC:            dc.l     COPPER_GAME
@@ -14795,7 +14598,6 @@ lbC010628:          move.w   #19,d7
                     bsr      DUMPSPRITE
                     move.l   (sp)+,SCROLL
                     move.l   (sp)+,BUFF_PTR
-                    ;bra      START_SHAKE
 
 START_SHAKE:        move.w   #336,BADDY_Y
                     move.w   #1264,BADDY_X
@@ -15078,7 +14880,6 @@ COL_CSEGS:          tst.b    INAIR
 lbC010C66:          rts
 
 DRAW_LASTBAD:       bsr      DRAW_BLOOK
-                    ;bra      DRAW_FISTS
 
 DRAW_FISTS:         tst.w    BADDY_EN
                     bmi      lbC010D0A
@@ -17315,7 +17116,7 @@ lbC0132A2:          clr.w    TIME
                     beq.s    lbC0132B4
                     rts
 
-lbC0132B4:          subq.w   #1,LIVES                      ; ****
+lbC0132B4:          subq.w   #1,LIVES                       ; ****
                     clr.w    ENERGY
                     move.w   START_TIME(pc),TIME
                     st       ZOOL_DIES
@@ -18490,6 +18291,7 @@ SPR_ADS:            dc.l     SPSTART,127962
                     dc.l     SPSTART,127962
                     dc.l     lbL130400,98712
 
+; Get ZOOL or ZOOLET
 GET_ZZORZL:         tst.b    PLAYER_ON(pc)
                     beq.s    lbC01461E
                     tst.b    PLAY2_CHAR(pc)
@@ -18518,35 +18320,34 @@ lbC014642:          tst.b    ITS_ZOOL
                     bne.s    lbC01465C
                     st       ITS_ZOOL
                     st       PSPR_CHANGE
-                    ;bra      lbC01465C
 
 lbC01465C:          rts
 
-GET_DISK:           tst.b    DISK_IN(pc)
-                    beq.s    lbC014680
-                    tst.b    LEVEL_NUM
-                    beq.s    GET_DISK1
-                    cmp.b    #7,LEVEL_NUM
-                    beq.s    GET_DISK1
-                    rts
+; GET_DISK:           tst.b    DISK_IN(pc)
+                    ; beq.s    lbC014680
+                    ; tst.b    LEVEL_NUM
+                    ; beq.s    GET_DISK1
+                    ; cmp.b    #7,LEVEL_NUM
+                    ; beq.s    GET_DISK1
+                    ; rts
 
-lbC014680:          cmp.b    #1,LEVEL_NUM
-                    beq.s    lbC0146A4
-                    cmp.b    #7,LEVEL_NUM
-                    beq.s    lbC0146A2
-                    tst.b    LEVEL_NUM
-                    bne.s    GET_DISK2
-lbC0146A2:          rts
+; lbC014680:          cmp.b    #1,LEVEL_NUM
+                    ; beq.s    lbC0146A4
+                    ; cmp.b    #7,LEVEL_NUM
+                    ; beq.s    lbC0146A2
+                    ; tst.b    LEVEL_NUM
+                    ; bne.s    GET_DISK2
+; lbC0146A2:          rts
 
-lbC0146A4:          tst.b    ON_BONUS(pc)
-                    beq.s    GET_DISK2
-                    rts
+; lbC0146A4:          tst.b    ON_BONUS(pc)
+                    ; beq.s    GET_DISK2
+                    ; rts
 
-GET_DISK1:          sf       DISK_IN
-                    rts
+; GET_DISK1:          sf       DISK_IN
+                    ; rts
 
-GET_DISK2:          st       DISK_IN
-                    rts
+; GET_DISK2:          st       DISK_IN
+                    ; rts
 
 LOAD_DSCRN:         bsr      INIT_SCRNS
                     bsr      INIT_SCRO
@@ -18568,16 +18369,16 @@ LOAD_DSCRN:         bsr      INIT_SCRNS
 END_SEQ:            st       JUST_ENDED
                     bsr      CLRPALET
                     move.b   #7,LEVEL_NUM
-                    bsr      GET_DISK
+                    ;bsr      GET_DISK
                     bsr      INIT_SCRNS
                     bsr      INIT_SCRO
                     move.l   #INTRO_SPSTART,SPRITE_AD
                     move.l   #BOT_CHIP,MASK_AD
-                    add.l    #71610,MASK_AD
-                    add.l    #12340,MASK_AD
+                    add.l    #71610,MASK_AD 
+                    add.l    #12340,MASK_AD  ; 83950
                     move.l   MASK_AD(pc),a0
                     add.l    #71482,a0
-                    move.l   a0,MUSIC_PTR
+                    move.l   a0,MUSIC_PTR   ; 155432
                     move.l   a0,MUSIC_AD
                     move.l   #BLACK_BAND,COLBAND
                     clr.w    COLBAND_PTR
@@ -18628,7 +18429,7 @@ END_SEQ:            st       JUST_ENDED
 lbC014B3A:          move.w   #$8080,$DFF096
                     jsr      VBL
                     bsr      INIT_FADE
-                    clr.w    PAGE
+                    clr.w    _PAGE
                     move.l   #TEXT1,TEXT_PTR
                     clr.w    MARKER_X
                     move.w   #4,MARKER_Y
@@ -18784,8 +18585,8 @@ lbC014EAA:          move.w   #2,MARKER_Y
                     clr.w    MARKER_X
                     move.w   #400,d7
                     bsr      WAIT_SECS
-                    addq.w   #1,PAGE
-                    cmp.w    #2,PAGE(pc)
+                    addq.w   #1,_PAGE
+                    cmp.w    #2,_PAGE(pc)
                     bmi.s    lbC014EFA
                     beq.s    lbC014EE2
                     move.w   #-1,MARKER_X
@@ -18850,7 +18651,7 @@ NEXT_STAGE:         move.w   #$A0,$DFF096
                     bne.s    _GET_DISK0
                     bsr      END_SEQ
 
-_GET_DISK0:         bsr      GET_DISK
+_GET_DISK0:         ;bsr      GET_DISK
                     bsr      CLR_ALLSCR
                     bsr      GET_ZZORZL
                     bsr      INIT_SCRNS
@@ -19647,7 +19448,7 @@ GOAGAIN:            move.l   #GREM_PAL,LEV_PAL
                     tst.b    MUSIC_ON(pc)
                     bne.s    lbC016824
                     bsr      PLAY_MUSIC
-lbC016824:          move.w   #$8080,$DFF096
+lbC016824:          move.w   #$8180,$DFF096
                     jsr      VBL
                     bsr      INIT_FADE
                     move.w   #200,d7
@@ -20129,54 +19930,18 @@ lbC0172F2:          rts
 DRAW_ZI:            move.w   #100,YCOORD
                     move.w   #96,XCOORD
                     move.w   #49,SPRITE
-                    tst.b    $DFF002
-                    btst     #6,$DFF002
-                    bne.s    lbC017320
-                    bra.s    _DUMPSPRITE4
-
-lbC017320:          nop
-                    nop
-                    nop
-                    tst.b    $BFE001
-                    tst.b    $BFE001
-                    btst     #6,$DFF002
-                    bne.s    lbC017320
-                    tst.b    $DFF002
-_DUMPSPRITE4:       jsr      DUMPSPRITE
+                    WAIT_BLITTER_2
+                    jsr      DUMPSPRITE
                     clr.w    SPRITES_CNTA
                     clr.w    SPRITES_CNTB
                     add.w    #64,XCOORD
                     move.w   #50,SPRITE
-                    tst.b    $DFF002
-                    btst     #6,$DFF002
-                    bne.s    lbC017378
-                    bra.s    _DUMPSPRITE5
-
-lbC017378:          nop
-                    nop
-                    nop
-                    tst.b    $BFE001
-                    tst.b    $BFE001
-                    btst     #6,$DFF002
-                    bne.s    lbC017378
-                    tst.b    $DFF002
-_DUMPSPRITE5:       jsr      DUMPSPRITE
+                    WAIT_BLITTER_2
+                    jsr      DUMPSPRITE
                     clr.w    SPRITES_CNTA
                     clr.w    SPRITES_CNTB
-                    tst.b    $DFF002
-                    btst     #6,$DFF002
-                    bne.s    lbC0173C0
-                    bra.s    lbC0173E2
-
-lbC0173C0:          nop
-                    nop
-                    nop
-                    tst.b    $BFE001
-                    tst.b    $BFE001
-                    btst     #6,$DFF002
-                    bne.s    lbC0173C0
-                    tst.b    $DFF002
-lbC0173E2:          rts
+                    WAIT_BLITTER_2
+                    rts
 
 CLR_ALLSCR:         lea      BUFF1_START,a0
                     bsr      CLR_SCRN
@@ -20252,20 +20017,14 @@ LOOPH:              jsr      STOOSLOW
                     move.l   PHYSADR,a0
                     move.l   LOGADR,PHYSADR
                     move.l   a0,LOGADR
-
                     bsr      PRO_PNTR
                     move.l   PHYSADR,BUFF_PTR
                     move.l   PHYSADR,SCROLL
                     jsr      SCROLL_BUFF
-
                     move.l   PHYSADR,BUFF_PTR
-
                     move.l   PHYSADR,a0
                     bsr      CLR_SCRN
-
-WAIT_BLT:           btst     #14,$DFF002
-                    bne.s    WAIT_BLT
-
+                    WAIT_BLITTER_2
                     move.w   #34,XCOORD
                     move.w   #34+5,YCOORD
                     lea      OPTIONS_TXT(pc),a0
@@ -20304,12 +20063,8 @@ WAIT_BLT:           btst     #14,$DFF002
                     tst.b    START_SEL(pc)
                     bne.s    lbC01766A
                     bra.w    LOOPH
-
 lbC01766A:          
-
-WAIT_BLT2:          btst     #14,$DFF002
-                    bne.s    WAIT_BLT2
-
+                    WAIT_BLITTER_2
                     move.w   #$20,FADE_CNT
                     sf       FADECOL_ON
                     bsr      WAIT_FDOFF
@@ -21269,28 +21024,22 @@ lbC018EC0:          addq.w   #1,d1
                     clr.b    BAND_REP
                     bra      COL_BLEND
 
-PLAY_MAP:           dc.l     PLAY0_MAP
-                    dc.l     PLAY0_TLS
-                    dc.l     PLAY1_MAP
-                    dc.l     PLAY1_TLS
-                    dc.l     PLAY2_MAP
-                    dc.l     PLAY2_TLS
-                    dc.l     PLAY3_MAP
-                    dc.l     PLAY3_TLS
-                    dc.l     PLAY4_MAP
-                    dc.l     PLAY4_TLS
-                    dc.l     PLAY5_MAP
-                    dc.l     PLAY5_TLS
-                    dc.l     PLAY5_MAP
-                    dc.l     PLAY5_TLS
-                    dc.l     PLAY7_MAP
-                    dc.l     PLAY7_TLS
+PLAY_MAP:           dc.l     PLAY0_MAP,PLAY0_TLS
+                    dc.l     PLAY1_MAP,PLAY1_TLS
+                    dc.l     PLAY2_MAP,PLAY2_TLS
+                    dc.l     PLAY3_MAP,PLAY3_TLS
+                    dc.l     PLAY4_MAP,PLAY4_TLS
+                    dc.l     PLAY5_MAP,PLAY5_TLS
+                    dc.l     PLAY5_MAP,PLAY5_TLS
+                    dc.l     PLAY7_MAP,PLAY7_TLS
 
 CONV_PLAYF:         lea      PLAY_MAP(pc),a0
                     moveq    #0,d7
                     move.b   LEVEL_NUM(pc),d7
                     lsl.w    #3,d7
+                    ; TLS
                     move.l   4(a0,d7.w),a1
+                    ; MAP
                     move.l   0(a0,d7.w),a0
                     lea      SPEND,a2
                     clr.w    d2
@@ -21351,11 +21100,11 @@ INIT_DUAL:          bsr      SETPANEL
                     move.w   #$E2,4(a0)
                     move.w   #$E8,8(a0)
                     move.w   #$EA,12(a0)
+                    move.w   #$F0,16(a0)
+                    move.w   #$F2,20(a0)
+                    move.w   #$F8,24(a0)
+                    move.w   #$FA,28(a0)
 
-                    move.w   #$F0,$10(a0)
-                    move.w   #$F2,$14(a0)
-                    move.w   #$F8,$18(a0)
-                    move.w   #$FA,$1C(a0)
                     lea      BPL4_H,a0
                     move.w   #$E4,(a0)+
                     move.l   PLAYF_BPL1,d0
@@ -22231,7 +21980,8 @@ MUSIC_PTR:          dc.l     0
 MUSIC_AD:           dc.l     0
 MUSIC_VOL:          dc.w     0
 MUSIC_ON:           dc.b     0
-DISK_IN:            dc.b     0
+;DISK_IN:            dc.b     0
+                    even
 FORCE_CHAN:         dc.w     0
 CLOCK:              dc.w     0
 AUD0DUR:            dc.w     0
@@ -22254,8 +22004,7 @@ A_END_ADD:          dc.l     0
 BON_START:          dc.w     0
 ICON_TAB:           dcb.l    9,0
 LAST_ICON:          dcb.l    2,0
-RBALLS_TAB:         dc.w     1,156,200,-1,-2,0,200,270,2,-2,0,60
-                    dc.w     270,3,-2,0,240,270,-2,-2
+RBALLS_TAB:         dc.w     1,156,200,-1,-2,0,200,270,2,-2,0,60,270,3,-2,0,240,270,-2,-2
 BALLS_TAB:          dcb.w    4,0
 lbW019FC6:          dcb.w    16,0
 BALLS_ON:           dc.w     1
@@ -22323,7 +22072,7 @@ TEMPL:              dcb.b    4,0
 HISC_HERE:          dc.l     0
 SCREEN_AD:          dc.l     0
 TEXT_PTR:           dc.l     0
-PAGE:               dc.w     0
+_PAGE:              dc.w     0
 MARKER_X:           dc.w     0
 MARKER_Y:           dc.w     0
 DIGIT1:             dc.b     0
@@ -22402,7 +22151,7 @@ UNDRAW_TABB:        dcb.w    440,0
                     ; note: there was a bug here in the original version
                     ; i don't know why it didn't trigger on the cd32
                     ; as it's been overwriting the data below
-                    ; maybe it's because of the presence of fastmem.
+                    ; maybe it's because of the absence of fastmem.
                     dcb.w    3000,0
 
 ; ---
@@ -23347,8 +23096,8 @@ SECTL_Y:            dc.w     0
 SECTL_TAB:          dc.b     0,0,1,1,2,2,3,3,4,4,5,5,6,6,$FF,0
 ZOOL_DIES:          dc.b     0
 MAINGUY_ON:         dc.b     0
-LEVEL_NUM:          dc.b     0
-STAGE_NUM:          dc.b     0
+LEVEL_NUM:          dc.b     START_WORLD
+STAGE_NUM:          dc.b     START_STAGE
 LEVNAME_X:          dc.w     0
 LEVNAME_Y:          dc.w     0
 LEVNAME_S:          dc.w     0
@@ -23357,7 +23106,8 @@ SHOT_TAB:           dcb.l    10,0
 lbL01F788:          dcb.l    6,0
 Y_CENTRE:           dc.b     0,128
 PULLBACK:           dc.w     0
-ITS_ZOOL:           dcb.b    2,0
+ITS_ZOOL:           dc.b     0
+                    even
 ZOOL_HGT:           dc.w     0
 DESTROYER:          dc.w     0
 INVULNERABLE:       dc.w     0
@@ -23389,10 +23139,8 @@ GRIP_FIRE:          dc.b     0
 STOP_OFF:           dc.b     0
 JOY_REPT:           dc.b     0
 OLDJOY:             dc.b     0,0
-GRIPSWR_AN:         dc.w     62,62,62,62,62,63,63,63,63,63,64,64
-                    dc.w     64,64,64,-1
-GRIPSWL_AN:         dc.w     64,64,64,64,64,63,63,63,63,63,62,62
-                    dc.w     62,62,62,-1
+GRIPSWR_AN:         dc.w     62,62,62,62,62,63,63,63,63,63,64,64,64,64,64,-1
+GRIPSWL_AN:         dc.w     64,64,64,64,64,63,63,63,63,63,62,62,62,62,62,-1
 X_FRICTION:         dc.w     4
 Y_FRICTION:         dc.w     1
 GRAVITY:            dc.w     9
@@ -23935,7 +23683,7 @@ TEST_MODE:          dc.b     1,0
 HARDSPR:            dcb.b    4,0
 RESTART_TAB:        dcb.l    3,0
 
-; these datas are filled up to END_SPRDATA when loading the datas/enemydat file
+; these data are filled up to END_SPRDATA when loading the data/enemydat file
 ; 51784 bytes
 BD1_SPRS:           dcb.b    814,0
 BD1_BANK2:          dcb.b    1034,0
@@ -24022,7 +23770,7 @@ PP2_SPRS:           dcb.b    652,0
 PP3_SPRS:           dcb.b    528,0
 END_SPRDATA:
 
-                    SECTION  zool2rs02DAEC,DATA_C
+                    section  dats,data_c
 
 XY_DATA:            dc.w     0,$FF80,2,$FF80,4,$FF80,7,$FF80,9,$FF80,11,$FF80
                     dc.w     13,$FF81,$10,$FF81,$12,$FF81,$14,$FF82,$16,$FF82
@@ -24225,78 +23973,78 @@ HISS_FXAD:          dcb.l    500,0
 lbL0471E8:          dcb.l    95,0
 SNOW_FXAD:          dcb.w    2465,0
 
-OVER_NAME:          dc.b     'datas/over',0
-INTSP_NAME:         dc.b     'datas/intro',0
-INTMUS_NAME:        dc.b     'datas/zool2.mod',0
-ENDSPR_NAME:        dc.b     'datas/endseq',0
-HITEXT_NAME:        dc.b     'datas/htext',0
-ENDSCR_NAME:        dc.b     'datas/end',0
-STGMUS_NAME:        dc.b     'datas/ready.mod',0
-STGSPR_NAME1:       dc.b     'datas/stage',0
-BON2_NAME1:         dc.b     'datas/bon2',0
+OVER_NAME:          dc.b     'data/over',0
+INTSP_NAME:         dc.b     'data/intro',0
+INTMUS_NAME:        dc.b     'data/zool2.mod',0
+ENDSPR_NAME:        dc.b     'data/endseq',0
+HITEXT_NAME:        dc.b     'data/htext',0
+ENDSCR_NAME:        dc.b     'data/end',0
+STGMUS_NAME:        dc.b     'data/ready.mod',0
+STGSPR_NAME1:       dc.b     'data/stage',0
+BON2_NAME1:         dc.b     'data/bon2',0
 
-BIRMUS_NAME:        dc.b     'datas/bir.mod',0
-BULMUS_NAME:        dc.b     'datas/bul.mod',0
-TOOMUS_NAME:        dc.b     'datas/too.mod',0
-SODMUS_NAME:        dc.b     'datas/sod.mod',0
+BIRMUS_NAME:        dc.b     'data/bir.mod',0
+BULMUS_NAME:        dc.b     'data/bul.mod',0
+TOOMUS_NAME:        dc.b     'data/too.mod',0
+SODMUS_NAME:        dc.b     'data/sod.mod',0
 
-BIRMAP_NAME:        dc.b     'datas/birmaps',0
-BULMAP_NAME:        dc.b     'datas/bulmaps',0
-TOOMAP_NAME:        dc.b     'datas/toomaps',0
-SNAMAP_NAME:        dc.b     'datas/snamaps',0
-SODMAP_NAME:        dc.b     'datas/sodmaps',0
-LASMAP_NAME:        dc.b     'datas/lasmaps',0
-PAPMAP_NAME:        dc.b     'datas/papmaps',0
+BIRMAP_NAME:        dc.b     'data/birmaps',0
+BULMAP_NAME:        dc.b     'data/bulmaps',0
+TOOMAP_NAME:        dc.b     'data/toomaps',0
+SNAMAP_NAME:        dc.b     'data/snamaps',0
+SODMAP_NAME:        dc.b     'data/sodmaps',0
+LASMAP_NAME:        dc.b     'data/lasmaps',0
+PAPMAP_NAME:        dc.b     'data/papmaps',0
 
-PAPSPR_NAME:        dc.b     'datas/papspr',0
-BIRSPR_NAME:        dc.b     'datas/birspr',0
-BULSPR_NAME:        dc.b     'datas/bulspr',0
-TOOSPR_NAME:        dc.b     'datas/toospr',0
-SNASPR_NAME:        dc.b     'datas/snaspr',0
-SODSPR_NAME:        dc.b     'datas/sodspr',0
-LASSPR_NAME:        dc.b     'datas/lasspr',0
+PAPSPR_NAME:        dc.b     'data/papspr',0
+BIRSPR_NAME:        dc.b     'data/birspr',0
+BULSPR_NAME:        dc.b     'data/bulspr',0
+TOOSPR_NAME:        dc.b     'data/toospr',0
+SNASPR_NAME:        dc.b     'data/snaspr',0
+SODSPR_NAME:        dc.b     'data/sodspr',0
+LASSPR_NAME:        dc.b     'data/lasspr',0
 
-PAPTLS_NAME:        dc.b     'datas/pap',0
-BIRTLS_NAME:        dc.b     'datas/bir',0
-BULTLS_NAME:        dc.b     'datas/bul',0
-TOOTLS_NAME:        dc.b     'datas/too',0
-SNATLS_NAME:        dc.b     'datas/sna',0
-SODTLS_NAME:        dc.b     'datas/sod',0
-LASTLS_NAME:        dc.b     'datas/las',0
+PAPTLS_NAME:        dc.b     'data/pap',0
+BIRTLS_NAME:        dc.b     'data/bir',0
+BULTLS_NAME:        dc.b     'data/bul',0
+TOOTLS_NAME:        dc.b     'data/too',0
+SNATLS_NAME:        dc.b     'data/sna',0
+SODTLS_NAME:        dc.b     'data/sod',0
+LASTLS_NAME:        dc.b     'data/las',0
 
-BIRMB_NAME:         dc.b     'datas/birblk',0
-BULMB_NAME:         dc.b     'datas/bulblk',0
-TOOMB_NAME:         dc.b     'datas/tooblk',0
-SNAMB_NAME:         dc.b     'datas/snablk',0
-SODMB_NAME:         dc.b     'datas/sodblk',0
-LASMB_NAME:         dc.b     'datas/lasblk',0
+BIRMB_NAME:         dc.b     'data/birblk',0
+BULMB_NAME:         dc.b     'data/bulblk',0
+TOOMB_NAME:         dc.b     'data/tooblk',0
+SNAMB_NAME:         dc.b     'data/snablk',0
+SODMB_NAME:         dc.b     'data/sodblk',0
+LASMB_NAME:         dc.b     'data/lasblk',0
 
-PSAMS_NAME1:        dc.b     'datas/perm2',0
-ICEFX_NAME:         dc.b     'datas/ziceplat',0
-SNOFX_NAME:         dc.b     'datas/zsnowfla',0
-HISFX_NAME:         dc.b     'datas/zhissing',0
-LAVFX_NAME:         dc.b     'datas/zlava',0
-PLTFX_NAME:         dc.b     'datas/zplatfor',0
-SPKFX_NAME:         dc.b     'datas/zspark',0
-TWEFX_NAME:         dc.b     'datas/ztweet',0
-READY_NAME1:        dc.b     'datas/ready1',0
-READY2_NAME1:       dc.b     'datas/ready2',0
-PERM2_NAME1:        dc.b     'datas/perm2',0
-PERM_NAME1:         dc.b     'datas/zperm',0
-ENEMY_NAME1:        dc.b     'datas/enemydat',0
-CHOOSE_NAME:        dc.b     'datas/zchs',0
-GREM_NAME:          dc.b     'datas/grem',0
-WARP_NAME:          dc.b     'datas/warp',0
-CHPS_NAME:          dc.b     'datas/chps',0
-ZOPT_NAME:          dc.b     'datas/zopt',0
-ZHISC_NAME:         dc.b     'datas/zhisc',0
+PSAMS_NAME1:        dc.b     'data/perm2',0
+ICEFX_NAME:         dc.b     'data/ziceplat',0
+SNOFX_NAME:         dc.b     'data/zsnowfla',0
+HISFX_NAME:         dc.b     'data/zhissing',0
+LAVFX_NAME:         dc.b     'data/zlava',0
+PLTFX_NAME:         dc.b     'data/zplatfor',0
+SPKFX_NAME:         dc.b     'data/zspark',0
+TWEFX_NAME:         dc.b     'data/ztweet',0
+READY_NAME1:        dc.b     'data/ready1',0
+READY2_NAME1:       dc.b     'data/ready2',0
+PERM2_NAME1:        dc.b     'data/perm2',0
+PERM_NAME1:         dc.b     'data/zperm',0
+ENEMY_NAME1:        dc.b     'data/enemydat',0
+CHOOSE_NAME:        dc.b     'data/zchs',0
+GREM_NAME:          dc.b     'data/grem',0
+WARP_NAME:          dc.b     'data/warp',0
+CHPS_NAME:          dc.b     'data/chps',0
+ZOPT_NAME:          dc.b     'data/zopt',0
+ZHISC_NAME:         dc.b     'data/zhisc',0
 
-BONUS_TILES_NAME:   dc.b     'datas/bonus_tiles',0
-BONUS_SPRITES_NAME: dc.b     'datas/bonus_sprites',0
-ZOOL_STAGE_NAME:    dc.b     'datas/zool_stage_screen',0
-ZOOZ_STAGE_NAME:    dc.b     'datas/zooz_stage_screen',0
+BONUS_TILES_NAME:   dc.b     'data/bonus_tiles',0
+BONUS_SPRITES_NAME: dc.b     'data/bonus_sprites',0
+ZOOL_STAGE_NAME:    dc.b     'data/zool_stage_screen',0
+ZOOZ_STAGE_NAME:    dc.b     'data/zooz_stage_screen',0
 
-HISCORE_NAME:       dc.b     'datas/hiscores',0
+HISCORE_NAME:       dc.b     'data/hiscores',0
                     even
 
 ; note: sprites are only used for the top infos bar
@@ -24331,12 +24079,12 @@ NULLCOP:            dc.w     $106,$20
                     dc.w     $FFFF,$FFFE
 
 ; main copperlist used during the game
-COPPER_GAME:        dc.w     $100,$4200,$104
+COPPER_GAME:        dc.w     $100,$4201,$104
 SPRITES_PRIO:       dc.w     $24
-                    dc.w     $8E,$2C91,$90,$2CC1
+                    dc.w     $8E,$2C81,$90,$2CC1
                     dc.w     $92,$30,$94,$d8
                     dc.w     $1FC,0
-                    dc.w     $106,$20
+                    dc.w     $106,$C20
                     dc.w     $180
 PANELCOLS:          dc.w     0,$182,0,$184,0,$186,0,$188,0
                     dc.w     $18A,0,$18C,0,$18E,0,$190,0,$192,0,$194,0,$196,0
@@ -24468,7 +24216,7 @@ WRITE_COP:          dcb.w    300,0
 COL_SCROLL:         dc.w     $FFFF,$FFFE
 
 ; used for still pictures with copper gradients (and the zool 2 animated title screen)
-COPPER3:            dc.w     $100,$4200
+COPPER3:            dc.w     $100,$4201
                     dc.w     $104,$24
                     dc.w     $8E,$2C81,$90,$2CC1
                     dc.w     $92,$30,$94,$d8
@@ -24492,7 +24240,7 @@ WRITE_COP3:         dcb.w    90,0
                     dc.w     $FFFF,$FFFE
                     dcb.w    100,0
 
-COPPER2:            dc.w     $100,$4200
+COPPER2:            dc.w     $100,$4201
                     dc.w     $104,$24
                     dc.w     $108,148,$10A,148
                     dc.w     $106,$1420
@@ -24683,7 +24431,7 @@ PLAY5_TLS:          incbin   "src/maps/play5.tls"
 PLAY7_MAP:          incbin   "src/maps/play7.map"
 PLAY7_TLS:          incbin   "src/maps/play7.tls"
 
-                    SECTION  zool2rs060018,BSS_C
+                    section  un_dats,bss_c
 
 SPSAVE:             ds.l     20
 SNAKE_R:            ds.l     2400
@@ -24767,12 +24515,12 @@ lbL0A111E:          ds.l     6021
                     ds.w     1
 END_MB:             ds.l     7315
 
-BOT_CHIP:           ds.l     32
-INTRO_SPSTART:      ds.l     18208
-SPSTART:            ds.l     38701
-MASKHERE:           ds.l     38700
-MUSICHERE:          ds.l     22829
-SPEND:              ds.l     13484
+BOT_CHIP:           ds.b     128
+INTRO_SPSTART:      ds.b     72832
+SPSTART:            ds.b     154804
+MASKHERE:           ds.b     154800
+MUSICHERE:          ds.b     91316
+SPEND:              ds.b     55392
 lbL12EF48:          ds.l     1326
 lbL130400:          ds.l     269
                     ds.w     1
@@ -24784,22 +24532,16 @@ lbL13B210:          ds.l     12450
 
 START_SCRN:         ds.l     300
 
-                    SECTION  BUFF1,BSS_C
-
 BUFF1_START:        ds.w     1
 lbL14794A:          ds.l     767
                     ds.w     1
 lbL148548:          ds.l     384
 lbL148B48:          ds.b     47632
 
-                    SECTION  BUFF2,BSS_C
-
 BUFF2_START:        ds.w     1
 lbL15455A:          ds.l     1151
                     ds.w     1
 lbL155758:          ds.b     47632
-
-                    SECTION  BUFF,BSS_C
 
 BUFF3_START:        ds.w     1
 lbL16116A:          ds.l     1151
@@ -24807,7 +24549,7 @@ lbL16116A:          ds.l     1151
 lbL162368:          ds.b     48816
 END_OF_DATA:
 
-                    SECTION  zool2rs16E218,CODE
+                    section  libs_code,code
 
 OPEN_LIBRARIES:     move.l   4.w,a6
                     moveq    #0,d0
